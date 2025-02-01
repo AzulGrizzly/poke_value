@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 API_KEY = os.getenv("POKEMON_TCG_API_KEY")
 
-# Base API URL
+# Base API URLs
 BASE_URL = "https://api.pokemontcg.io/v2/cards"
 SETS_URL = "https://api.pokemontcg.io/v2/sets"
 
@@ -40,11 +40,17 @@ def get_all_sets():
         print("⚠ API Request Failed:", e)
         return ["All Sets"]  # Default option in case of API failure
 
-
 def search_pokemon_cards(name, selected_set="All Sets"):
-    """Search for Pokémon cards by name and optionally filter by set, including prices."""
+    """Search for Pokémon cards by name (partial match) and optionally filter by set."""
     headers = {"X-Api-Key": API_KEY}
-    params = {"q": f"name:{name}"}
+
+    # Enable partial matches using wildcards
+    query = f'name:"*{name}*"'
+    
+    if selected_set != "All Sets":
+        query += f' set.name:"{selected_set}"'
+    
+    params = {"q": query}
 
     try:
         response = requests.get(BASE_URL, headers=headers, params=params)
@@ -58,23 +64,22 @@ def search_pokemon_cards(name, selected_set="All Sets"):
         cards = []
         for card in data["data"]:
             set_name = card.get("set", {}).get("name", "Unknown Set")
-            if selected_set == "All Sets" or selected_set == set_name:
-                card_info = {
-                    "name": card.get("name", "Unknown"),
-                    "set_name": set_name,
-                    "rarity": card.get("rarity", "Unknown Rarity"),
-                    "card_number": card.get("number", "N/A"),  # Card number in set
-                    "market_price": None
-                }
+            card_info = {
+                "name": card.get("name", "Unknown"),
+                "set_name": set_name,
+                "rarity": card.get("rarity", "Unknown Rarity"),
+                "card_number": card.get("number", "N/A"),  # Card number in set
+                "market_price": None
+            }
 
-                # Extract Market Price from TCGPlayer data (if available)
-                tcgplayer_data = card.get("tcgplayer", {}).get("prices", {})
-                if "holofoil" in tcgplayer_data:
-                    card_info["market_price"] = tcgplayer_data["holofoil"].get("market", 0.0)
-                elif "normal" in tcgplayer_data:
-                    card_info["market_price"] = tcgplayer_data["normal"].get("market", 0.0)
+            # Extract Market Price from TCGPlayer data (if available)
+            tcgplayer_data = card.get("tcgplayer", {}).get("prices", {})
+            if "holofoil" in tcgplayer_data:
+                card_info["market_price"] = tcgplayer_data["holofoil"].get("market", 0.0)
+            elif "normal" in tcgplayer_data:
+                card_info["market_price"] = tcgplayer_data["normal"].get("market", 0.0)
 
-                cards.append(card_info)
+            cards.append(card_info)
 
         return cards
 
