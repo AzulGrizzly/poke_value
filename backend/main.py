@@ -175,14 +175,21 @@ def add_selected_card():
 
 
 
-# Function to update "My List"
+# Function to update "My List" (Filtered by logged-in user)
 def update_listbox():
-    listbox_my_list.delete(0, tk.END)
+    listbox_my_list.delete(0, tk.END)  # Clear previous entries
+
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name, set_name, card_number, rarity FROM pokemon_cards")
-        for row in cursor.fetchall():
-            listbox_my_list.insert(tk.END, f"{row[0]} - {row[1]} (#{row[2]}) - {row[3]}")
+        cursor.execute("SELECT name, set_name, card_number, rarity, value FROM pokemon_cards WHERE username = ?", (current_user,))
+        user_cards = cursor.fetchall()
+
+    if not user_cards:
+        listbox_my_list.insert(tk.END, "No Pokémon found for this user.")
+        return
+
+    for row in user_cards:
+        listbox_my_list.insert(tk.END, f"{row[0]} - {row[1]} (#{row[2]}) - {row[3]} - ${row[4]:.2f}")
 
 # Function to remove a selected card from "My List"
 def remove_card():
