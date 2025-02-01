@@ -4,9 +4,20 @@ from tkinter import ttk, messagebox
 import requests
 from datetime import datetime
 from pokemon_api import search_pokemon_cards, get_all_sets
+import os
 
 # Database file
 DB_FILE = "pokemon.db"
+SESSION_FILE = "session.txt"  # File to track logged-in user
+
+# 🔹 Get logged-in user from session file
+if not os.path.exists(SESSION_FILE):
+    messagebox.showerror("Error", "No user session found. Please log in.")
+    exit()
+
+with open(SESSION_FILE, "r") as f:
+    current_user = f.read().strip()
+
 
 # GitHub Config
 GITHUB_USER = "azulgrizzly"
@@ -118,6 +129,7 @@ def search_card():
         listbox.insert(tk.END, display_text)
 
 # Function to add a selected card to the database
+# Function to add a selected card to the database
 def add_selected_card():
     selected_item = listbox.curselection()
     if not selected_item:
@@ -152,14 +164,15 @@ def add_selected_card():
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO pokemon_cards (name, set_name, card_number, rarity, value)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (card_name, set_name, card_number, rarity, market_price))
+                INSERT INTO pokemon_cards (name, set_name, card_number, rarity, value, username)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (card_name, set_name, card_number, rarity, market_price, current_user))
             conn.commit()
             messagebox.showinfo("Success", f"Added {card_name} ({set_name} #{card_number}) with price ${market_price:.2f} to My List!")
             update_listbox()
         except sqlite3.IntegrityError:
             messagebox.showwarning("Duplicate", f"{card_name} from {set_name} (#{card_number}) is already in My List!")
+
 
 
 # Function to update "My List"
@@ -191,6 +204,13 @@ def remove_card():
 
         messagebox.showinfo("Removed", f"{card_name} removed from My List!")
         update_listbox()
+        
+# Function to log out (clears session & returns to auth)
+def logout():
+    os.remove(SESSION_FILE)
+    messagebox.showinfo("Logged Out", "You have been logged out.")
+    root.destroy()
+    os.system("python auth.py")  # Relaunch authentication window
 
 # GUI Setup
 root = tk.Tk()
@@ -244,6 +264,10 @@ updates_listbox.bind("<Double-Button-1>", show_commit_details)
 
 refresh_button = ttk.Button(updates_frame, text="Refresh Updates", command=update_commit_list)
 refresh_button.pack(pady=5)
+
+# 🔹 Logout Button
+logout_button = ttk.Button(root, text="Logout", command=logout)
+logout_button.pack(pady=10)
 
 create_table()
 update_listbox()

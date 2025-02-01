@@ -1,22 +1,30 @@
 import sqlite3
+import bcrypt
 
 DB_FILE = "pokemon.db"
 
-def add_value_column():
-    """Adds the 'value' column to the database if it doesn't exist."""
+def setup_database():
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
 
-        # Check if 'value' column exists
+        # 🔹 Create `users` table (if it doesn't exist)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+
+        # 🔹 Add `username` column to `pokemon_cards` (if not already added)
         cursor.execute("PRAGMA table_info(pokemon_cards)")
-        columns = [column[1] for column in cursor.fetchall()]
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if "username" not in columns:
+            cursor.execute("ALTER TABLE pokemon_cards ADD COLUMN username TEXT")
 
-        if "value" not in columns:
-            cursor.execute("ALTER TABLE pokemon_cards ADD COLUMN value REAL DEFAULT 0.0")
-            conn.commit()
-            print("✅ 'value' column added successfully!")
-        else:
-            print("ℹ 'value' column already exists. No changes made.")
+        conn.commit()
+        print("✅ Database setup complete!")
 
-if __name__ == "__main__":
-    add_value_column()
+# Run setup
+setup_database()
