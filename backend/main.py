@@ -1,10 +1,39 @@
 import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
+import requests
+from datetime import datetime
 from pokemon_api import search_pokemon_cards, get_all_sets
 
 # Database file
 DB_FILE = "pokemon.db"
+
+# GitHub Config
+GITHUB_USER = "azulgrizzly"
+REPO_NAME = "poke_value"
+BRANCH = "master" 
+
+# Function to fetch GitHub commit history
+def fetch_commit_history():
+    """Fetches the latest commits from GitHub and returns a list of commit messages with dates."""
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{REPO_NAME}/commits?sha={BRANCH}"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        commits = response.json()
+
+        commit_messages = []
+        for commit in commits[:10]:  # Limit to last 10 commits
+            date_str = commit["commit"]["committer"]["date"]
+            commit_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M")
+            message = commit["commit"]["message"]
+            commit_messages.append(f"{commit_date} - {message}")
+
+        return commit_messages
+
+    except requests.exceptions.RequestException as e:
+        return [f"Error fetching updates: {e}"]
 
 # Function to create table (if not exists)
 def create_table():
@@ -32,11 +61,18 @@ def search_card():
         messagebox.showwarning("Input Error", "Please enter a Pokémon name.")
         return
 
+    # Disable Search Button & Show Loading Indicator
+    search_button.config(state=tk.DISABLED, text="Searching...")
+
     # Clear previous search results
     listbox.delete(0, tk.END)
+    root.update_idletasks()  # Force UI to refresh
 
     # Fetch matching cards from API with set filter
     results = search_pokemon_cards(search_query, selected_set)
+
+    # Restore Button State After API Call
+    search_button.config(state=tk.NORMAL, text="Search")
 
     if not results:
         messagebox.showinfo("No Results", f"No cards found for '{search_query}' in '{selected_set}'.")
@@ -47,49 +83,9 @@ def search_card():
         display_text = f"{card['name']} - {card['set_name']} (#{card['card_number']}) - {card['rarity']}"
         listbox.insert(tk.END, display_text)
 
-# Function to add the selected card to the database
-def add_selected_card():
-    selected_item = listbox.curselection()
-    if not selected_item:
-        messagebox.showwarning("Selection Error", "Please select a card from the search results.")
-        return
-
-    # Extract card details from selected text
-    selected_text = listbox.get(selected_item[0])
-    parts = selected_text.split(" - ")
-    if len(parts) < 3:
-        return
-
-    card_name = parts[0].strip()
-    set_name = parts[1].strip().split(" (#")[0]
-    card_number = parts[1].split(" (#")[1].split(")")[0]
-    rarity = parts[2].strip()
-
-    # Retrieve the full card data including market price from the API
-    cards_data = search_pokemon_cards(card_name, set_name)
-    selected_card_data = next(
-        (card for card in cards_data if card["set_name"] == set_name and card["card_number"] == card_number), None
-    )
-
-    if not selected_card_data:
-        messagebox.showwarning("Data Error", "Could not retrieve price data for the selected card.")
-        return
-
-    market_price = selected_card_data["market_price"] if selected_card_data["market_price"] is not None else 0.0
-
-    # Insert into DB
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO pokemon_cards (name, set_name, card_number, rarity, value)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (card_name, set_name, card_number, rarity, market_price))
-            conn.commit()
-            messagebox.showinfo("Success", f"Added {card_name} ({set_name} #{card_number}) with price ${market_price:.2f} to My List!")
-            update_listbox()
-        except sqlite3.IntegrityError:
-            messagebox.showwarning("Duplicate", f"{card_name} from {set_name} (#{card_number}) is already in My List!")
+# Function to update the Set Dropdown dynamically
+def update_set_dropdown():
+    set_dropdown["values"] = get_all_sets()
 
 # Function to update "My List" in Listbox
 def update_listbox():
@@ -110,22 +106,30 @@ def remove_card():
     selected_text = listbox_my_list.get(selected_item[0])
     card_name = selected_text.split(" - ")[0]
 
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM pokemon_cards WHERE name = ?", (card_name,))
-        conn.commit()
-    
-    messagebox.showinfo("Removed", f"{card_name} removed from My List!")
-    update_listbox()
+    # Show confirmation popup
+    confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to remove '{card_name}'?")
 
-# Function to update the Set Dropdown dynamically
-def update_set_dropdown():
-    set_dropdown["values"] = get_all_sets()
+    if confirm:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM pokemon_cards WHERE name = ?", (card_name,))
+            conn.commit()
+        
+        messagebox.showinfo("Removed", f"{card_name} removed from My List!")
+        update_listbox()
+
+# Function to update commit history in "App Updates" tab
+def update_commit_list():
+    updates_listbox.delete(0, tk.END)
+    commits = fetch_commit_history()
+    
+    for commit in commits:
+        updates_listbox.insert(tk.END, commit)
 
 # --- GUI Setup ---
 root = tk.Tk()
 root.title("Pokémon Card Manager")
-root.geometry("600x550")
+root.geometry("600x600")
 
 # Create Notebook (Tabs)
 notebook = ttk.Notebook(root)
@@ -146,14 +150,13 @@ set_dropdown = ttk.Combobox(search_frame, textvariable=set_var, state="readonly"
 set_dropdown.pack(pady=5)
 set_dropdown.bind("<Button-1>", lambda e: update_set_dropdown())  # Update when clicked
 
+search_entry.bind("<Return>", lambda event: search_card())
+
 search_button = ttk.Button(search_frame, text="Search", command=search_card)
 search_button.pack(pady=5)
 
 listbox = tk.Listbox(search_frame, width=60, height=10)
 listbox.pack(pady=5)
-
-add_button = ttk.Button(search_frame, text="Add to My List", command=add_selected_card)
-add_button.pack(pady=5)
 
 # ---- My List Tab ----
 list_frame = ttk.Frame(notebook)
@@ -165,9 +168,22 @@ listbox_my_list.pack(padx=10, pady=10)
 remove_button = ttk.Button(list_frame, text="Remove Selected", command=remove_card)
 remove_button.pack(pady=5)
 
+# ---- App Updates Tab ----
+updates_frame = ttk.Frame(notebook)
+notebook.add(updates_frame, text="App Updates")
+
+ttk.Label(updates_frame, text="Latest GitHub Updates:", font=("Arial", 12, "bold")).pack(pady=5)
+
+updates_listbox = tk.Listbox(updates_frame, width=80, height=15)
+updates_listbox.pack(pady=5, padx=10)
+
+refresh_button = ttk.Button(updates_frame, text="Refresh Updates", command=update_commit_list)
+refresh_button.pack(pady=5)
+
 # Load existing data
 create_table()
 update_listbox()
+update_commit_list()  # Load commits on startup
 
 # Run the main loop
 root.mainloop()
